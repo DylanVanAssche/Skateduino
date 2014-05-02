@@ -272,12 +272,12 @@ void BatteryLevelUpdate() // Batterylevel check every 1,5 second.
    if(BatteryLevelMotor < 10 || BatteryLevelStuff < 10)
    {
      LCD.setCursor(10, 0);
-     LCD.print("LOW ");
+     LCD.print("LOW !");
    }
    else
    {
      LCD.setCursor(13, 0);
-     LCD.print("%");
+     LCD.print("% ");
    }
   }
 }
@@ -295,7 +295,7 @@ void LCDUpdate() // Update LCD information
   else
   {
     LCD.setCursor(7, 1);
-    LCD.print("N/A  ");
+    LCD.print("N/A ");
   }
 
   if (LCDArrowLeft == true)  // LCD arrow left blink
