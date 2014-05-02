@@ -11,8 +11,8 @@ Skateduino is an Arduino based control system for electric skateboards with a Wi
 * ESC motor control
 * LCD screen
 * The controls are based on the Wii Nunchuck
-* Claxon
 * Speed limit 18 km/h, only then the electric skateboard can be used in Belgium on the bicycle path. 
+* Claxon
 
 2. Versions
 -----------
