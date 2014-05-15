@@ -5,26 +5,42 @@
  *                                        *
  *-------------> SKATEDUINO <-------------*
  *                                        *
- *               V 0.5 BETA               *
+ *               V 0.8 BETA               *
  ******************************************
  THIS IS A BETA! I'm never resposibly for any damage to your stuff! This version is NOT tested.
  SkateDuino is a Arduino based controller for an electric skateboard.
- Functions:
  
- >  GPS speed.
- >  Maximum speed: 18km/h (Belgian laws)!
- >  LCD with the current speed, battery state & traffic indicator functions.
- >  Battery monitor for both batteries:
+    ///////////////
+   // Functions //
+  ///////////////
+
+   >  GPS
+   >  Maximum speed: 18km/h (Belgian laws)!
+   >  Acceleration assist.
+   >  PSM (Power Save Mode) for saving the battery.
+   >  LCD screen with some usefull information:
+ 
+     * GPS speed
+     * Battery state
+     * Traffic indicator
+     * GPS time
+     * GPS satellites
+ 
+   >  Battery monitor for both batteries:
+ 
      * BATT 1 = Motor battery (22,4V @ 6 cells)
      * BATT 2 = Stuff battery (7,4 V @ 2 cells).
-    
- >  Wii Nunchuck controller.
- >  3 TIP122 for controlling LED's on the electric skateboard: 
+ 
+   >  Wii Nunchuck controller.
+   >  3 TIP122 for controlling LED's on the electric skateboard: 
+ 
      *  Traffic indicator LEFT.
      *  Traffic indicator RIGHT.
-     *  Tail lights + headlights.
+     *  Tail lights + headlights. 
  
- */
+   > Simple anti-theft lock
+ 
+*/
 
 #include <LiquidCrystal.h>
 #include <Servo.h>
@@ -42,6 +58,7 @@ boolean LCDArrowLeft = true;
 boolean LCDArrowRight = true;
 boolean TrafficIndicatorLeftStatus = false;
 boolean TrafficIndicatorRightStatus = false;
+boolean Lock = true;
 
 int ESCValue = 0;
 int SpeedKMPH = 0;
@@ -49,6 +66,10 @@ int BatteryLevel = 0;
 int BatteryLevelStuff = 0;
 int BatteryLevelMotor = 0;
 int BatteryNumber = 0;
+int Navigation = 1;
+int MotorAccelerationPositiveValue = 0;
+int MotorAccelerationNegativeValue = 0;
+int PSMTimer = 0;
 
 const int TrafficIndicatorLeftOutput  = 5;
 const int TrafficIndicatorRightOutput  = 6;
@@ -56,11 +77,22 @@ const int BatteryStuff = A0;
 const int BatteryMotor = A3;
 const int Lights  =  9;
 const int Claxon  =  4;
+const int MaximumSpeed = 160; // Declare here the ESCValue when you reach 18 km/h.
 
 long TrafficIndicatorspreviousMillis = 0;
 long TrafficIndicatorsInterval = 300;
 long BatteryLevelpreviousMillis = 0;
 long BatteryLevelInterval = 1500;
+long NavigationPositivepreviousMillis = 0;
+long NavigationPositiveInterval = 500;
+long NavigationNegativepreviousMillis = 0;
+long NavigationNegativeInterval = 250;
+long MotorAccelerationNegativepreviousMillis = 0;
+long MotorAccelerationNegativeInterval = 1000;
+long MotorAccelerationPositivepreviousMillis = 0;
+long MotorAccelerationPositiveInterval = 2000;
+long PSMpreviousMillis = 0;
+long PSMInterval = 1000;
 
 byte ArrowLeftChar[8] = {
   B00000,
@@ -84,27 +116,71 @@ byte ArrowRightChar[8] = {
   B00000
 };
 
+byte LockChar1[8] = {
+  B00000,
+  B00000,
+  B00111,
+  B00100,
+  B00100,
+  B00100,
+  B00100,
+  B11111
+};
+
+byte LockChar2[8] = {
+  B00000,
+  B00000,
+  B11100,
+  B00100,
+  B00100,
+  B00100,
+  B00100,
+  B11111
+};
+
+byte LockChar3[8] = {
+  B11111,
+  B11111,
+  B11111,
+  B11111,
+  B11111,
+  B11111,
+  B00000,
+  B00000
+};
+
+byte LockChar4[8] = {
+  B11111,
+  B11111,
+  B11111,
+  B11111,
+  B11111,
+  B11111,
+  B00000,
+  B00000
+};
+
 void setup() // BOOT PROCESS
 {
   // Setup LCD screen.
   LCD.begin(16, 2);
   LCD.setCursor(0, 0);
-  LCD.print("SkateDuino  V0.5");
+  LCD.print("SkateDuino  V0.8");
   LCD.setCursor(0, 1);
   LCD.print(" Booting . . .  ");
-  delay(500);
+  delay(350);
 
   // Setup GPS serial communication.
   Serial1.begin(9600); // Serial TTL on Arduino Pro Micro, Leonardo, Due.
   LCD.setCursor(0, 1);
   LCD.print("     GPS OK     ");
-  delay(500);
+  delay(250);
 
   // Setup the Wii Nunchuck Controller.
   nunchuk.init();
   LCD.setCursor(0, 1);
   LCD.print("  NUNCHUCK OK   ");
-  delay(500);
+  delay(250);
 
   // Intialise Li-Po monitor
   pinMode(BatteryMotor, INPUT);
@@ -113,7 +189,7 @@ void setup() // BOOT PROCESS
   digitalWrite(BatteryStuff, HIGH);
   LCD.setCursor(0, 1);
   LCD.print("Li-Po monitor OK");
-  delay(500);
+  delay(250);
 
   // Arm the ESC.
   ESC.attach(7);   // Attaches the ESC on pin 9 to the servo object.
@@ -125,59 +201,119 @@ void setup() // BOOT PROCESS
   delay(3000);
   LCD.setCursor(0, 1);
   LCD.print("   ESC ARMED    ");
-  delay(500);
+  delay(250);
 
   // END Setup process
   pinMode(TrafficIndicatorLeftOutput, OUTPUT);
   pinMode(TrafficIndicatorRightOutput, OUTPUT);
+  digitalWrite(TrafficIndicatorLeftOutput, LOW);
+  digitalWrite(TrafficIndicatorRightOutput, LOW);
   pinMode(Lights, OUTPUT);
   digitalWrite(Lights, HIGH);
+  pinMode(Claxon, OUTPUT);
+  digitalWrite(Claxon, LOW);
   LCD.createChar(1, ArrowRightChar);
   LCD.createChar(2, ArrowLeftChar);
+  LCD.createChar(3, LockChar1);
+  LCD.createChar(4, LockChar2);
+  LCD.createChar(5, LockChar3);
+  LCD.createChar(6, LockChar4);
 
   LCD.setCursor(0, 1);
   LCD.print("  Booting DONE  ");
-  delay(1000);
+  delay(350);
   LCD.clear();
-  LCD.setCursor(0, 1);
-  LCD.print("Speed:");
-  LCD.setCursor(12, 1);
-  LCD.print("km/h");
-  LCD.setCursor(2, 0);
-  LCD.print("BATT  :");
-  LCD.setCursor(13, 0);
-  LCD.print("%");
 }
 
 
 void loop()
 {
-  // Update motor& nunchuck stuff
-  nunchuk.update();
-  ESCValue = map(nunchuk.analogY, 129, 255, 30, 160);
-
-  if (nunchuk.zButton == 1 && ESCValue > 29)
+  if(Lock == true) // Simple lock to prevent that someone can use the skateboard.
   {
-    ESC.write(ESCValue);
+    LockFunction();
   }
   else
   {
-    ESC.write(30);
+    // Update motor & nunchuck stuff
+    nunchuk.update();
+    ESCValue = map(nunchuk.analogY, 135, 255, 30, 160);
+
+    if (nunchuk.zButton == 1 && ESCValue > 29)
+    {
+      if(MaximumSpeed > ESCValue)
+      {
+        unsigned long MotorAccelerationPositivecurrentMillis = millis();
+        if(ESCValue >= MotorAccelerationPositiveValue && (MotorAccelerationPositivecurrentMillis - MotorAccelerationPositivepreviousMillis > MotorAccelerationPositiveInterval))
+        {
+          MotorAccelerationPositiveValue++;
+          ESC.write(MotorAccelerationPositiveValue);
+        }
+
+        unsigned long MotorAccelerationNegativecurrentMillis = millis();
+        if(ESCValue <= MotorAccelerationNegativeValue && (MotorAccelerationNegativecurrentMillis - MotorAccelerationNegativepreviousMillis > MotorAccelerationNegativeInterval))
+        {
+          MotorAccelerationNegativeValue--;
+          ESC.write(MotorAccelerationNegativeValue);
+        }
+      }
+      else
+      {
+        ESC.write(MaximumSpeed); 
+      }
+    }
+    else
+    {
+      ESC.write(30);
+    }
+
+    if(nunchuk.cButton == 1)
+    {
+      digitalWrite(Claxon,HIGH); 
+    }
+    else
+    {
+      digitalWrite(Claxon,LOW); 
+    }
+    
+    if(nunchuk.cButton == 1 && nunchuk.analogY >= 200 )
+    {
+      Lock = true;
+    }
+
+    if(nunchuk.analogX <= 100 && nunchuk.zButton == 0 && Navigation > 1)
+    {
+      unsigned long NavigationNegativecurrentMillis = millis();
+      if (NavigationNegativecurrentMillis - NavigationNegativepreviousMillis > NavigationNegativeInterval) {
+        NavigationNegativepreviousMillis = NavigationNegativecurrentMillis;
+        Navigation--;
+      }
+    }
+    if(nunchuk.analogX >= 150 && nunchuk.zButton == 0 && Navigation < 3)
+    {
+      unsigned long NavigationPositivecurrentMillis = millis();
+      if (NavigationPositivecurrentMillis - NavigationPositivepreviousMillis > NavigationPositiveInterval) {
+        NavigationPositivepreviousMillis = NavigationPositivecurrentMillis;
+        Navigation++;
+      }
+    }
+
+    // Update GPS stuff
+    while (Serial1.available() > 0)
+      if (GPS.encode(Serial1.read()))
+
+        // Update battery level
+        BatteryLevelUpdate();
+
+    // Update LCD
+    LCDUpdate();
+
+    // Update traffic indicators
+    TrafficIndicatorsUpdate();
+
+    // Activate PSM when we aren't driving.
+    PowerSaveMode();  
+
   }
-
-  // Update GPS stuff
-  while (Serial1.available() > 0)
-    if (GPS.encode(Serial1.read()))
-
-  // Update battery level
-  BatteryLevelUpdate();
-
-  // Update LCD
-  LCDUpdate();
-  
-  // Update traffic indicators
-  TrafficIndicatorsUpdate();
-
 }
 
 void TrafficIndicatorsUpdate() // Switch the traffic indicators ON/OFF with the nunchuck accelerometer
@@ -226,76 +362,144 @@ void BatteryLevelUpdate() // Batterylevel check every 1,5 second.
 
   if (BatteryLevelcurrentMillis - BatteryLevelpreviousMillis > BatteryLevelInterval)
   {
+    LCD.setCursor(2, 0);
+    LCD.print("BATT  :");
+    LCD.setCursor(13, 0);
+    LCD.print("%");
+
     BatteryLevelpreviousMillis = BatteryLevelcurrentMillis;
     if(BatteryNumber == 1)
     {
-     LCD.setCursor(7, 0);
-     LCD.print("2");
-     BatteryLevelStuff = analogRead(BatteryStuff);  // Read battery level and map the value to percents.
-     BatteryLevelStuff = map(BatteryLevelStuff, 720, 1008, 0, 100);
-     if (BatteryLevelMotor == 100)
-    {
-      LCD.setCursor(10, 0);
-      LCD.print(BatteryLevelMotor);
+      LCD.setCursor(7, 0);
+      LCD.print("2");
+      BatteryLevelStuff = analogRead(BatteryStuff);  // Read battery level and map the value to percents.
+      BatteryLevelStuff = map(BatteryLevelStuff, 720, 1008, 0, 100);
+      if (BatteryLevelMotor == 100)
+      {
+        LCD.setCursor(10, 0);
+        LCD.print(BatteryLevelMotor);
+      }
+      else
+      {
+        LCD.setCursor(10, 0);
+        LCD.print("   ");
+        LCD.setCursor(11, 0);
+        LCD.print(BatteryLevelMotor);
+      }
+      BatteryNumber = 2;
     }
     else
     {
-      LCD.setCursor(10, 0);
-      LCD.print("   ");
-      LCD.setCursor(11, 0);
-      LCD.print(BatteryLevelMotor);
+      LCD.setCursor(7, 0);
+      LCD.print("1");
+      BatteryLevelMotor = analogRead(BatteryMotor);  // Read battery level and map the value to percents.
+      BatteryLevelMotor = map(BatteryLevelMotor, 720, 1008, 0, 100);
+
+      if (BatteryLevelStuff == 100)
+      {
+        LCD.setCursor(10, 0);
+        LCD.print(BatteryLevelStuff);
+      }
+      else
+      {
+        LCD.setCursor(10, 0);
+        LCD.print("   ");
+        LCD.setCursor(11, 0);
+        LCD.print(BatteryLevelStuff);
+      }
+      BatteryNumber = 1; 
     }
-     BatteryNumber = 2;
+
+    if(BatteryLevelMotor < 10 || BatteryLevelStuff < 10)
+    {
+      LCD.setCursor(10, 0);
+      LCD.print("LOW !");
     }
     else
     {
-     LCD.setCursor(7, 0);
-     LCD.print("1");
-     BatteryLevelMotor = analogRead(BatteryMotor);  // Read battery level and map the value to percents.
-     BatteryLevelMotor = map(BatteryLevelMotor, 720, 1008, 0, 100);
-     
-     if (BatteryLevelStuff == 100)
-    {
-      LCD.setCursor(10, 0);
-      LCD.print(BatteryLevelStuff);
+      LCD.setCursor(13, 0);
+      LCD.print("% ");
     }
-    else
-    {
-      LCD.setCursor(10, 0);
-      LCD.print("   ");
-      LCD.setCursor(11, 0);
-      LCD.print(BatteryLevelStuff);
-    }
-     BatteryNumber = 1; 
-    }
-    
-   if(BatteryLevelMotor < 10 || BatteryLevelStuff < 10)
-   {
-     LCD.setCursor(10, 0);
-     LCD.print("LOW !");
-   }
-   else
-   {
-     LCD.setCursor(13, 0);
-     LCD.print("% ");
-   }
   }
 }
 
 void LCDUpdate() // Update LCD information
 {
-  if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the current speed based on GPS information
+  switch(Navigation)
   {
-    SpeedKMPH = GPS.speed.kmph();
-    LCD.setCursor(6, 1);
-    LCD.print("     ");
-    LCD.setCursor(9, 1);
-    LCD.print(SpeedKMPH);
-  }
-  else
-  {
-    LCD.setCursor(7, 1);
-    LCD.print("N/A ");
+  case 1:
+    if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the current speed based on GPS information.
+    {
+      SpeedKMPH = GPS.speed.kmph();
+      LCD.setCursor(0, 1);
+      LCD.print("Speed: ");
+      LCD.setCursor(11, 1);
+      LCD.print(" km/h");
+      LCD.setCursor(6, 1);
+      LCD.print("     ");
+      LCD.setCursor(9, 1);
+      LCD.print(SpeedKMPH);
+    }
+    else
+    {
+      LCD.setCursor(0, 1);
+      LCD.print("Speed: ");
+      LCD.setCursor(11, 1);
+      LCD.print(" km/h");
+      LCD.setCursor(7, 1);
+      LCD.print("N/A ");
+    }
+    break;
+
+  case 2:
+    if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the number of satellites.
+    {
+      LCD.setCursor(0, 1);
+      LCD.print("#Satellites:    ");
+      LCD.setCursor(13, 1);
+      LCD.print(GPS.satellites.value());
+    }
+    else
+    {
+      LCD.setCursor(0, 1);
+      LCD.print("#Satellites:    ");
+      LCD.setCursor(13, 1);
+      LCD.print("N/A ");
+    }
+    break;
+
+  case 3:
+    if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the current time based on GPS information.
+    {
+      LCD.setCursor(0, 1);
+      LCD.print("                ");
+      LCD.setCursor(0, 1);
+      LCD.print("Time:           ");
+      LCD.setCursor(7, 1);
+      LCD.print("h");
+      LCD.setCursor(11, 1);
+      LCD.print("m");
+      LCD.setCursor(15, 1);
+      LCD.print("s");
+      LCD.setCursor(5, 1);
+      LCD.print(GPS.time.hour() + 2);
+      LCD.setCursor(9, 1);
+      LCD.print(GPS.time.minute());
+      LCD.setCursor(13, 1);
+      LCD.print(GPS.time.second());
+    }
+    else
+    {
+      LCD.setCursor(0, 1);
+      LCD.print("Time:           ");
+      LCD.setCursor(9, 1);
+      LCD.print("N/A");
+    }
+    break;
+
+  default:
+    Navigation = 1;
+    break;
   }
 
   if (LCDArrowLeft == true)  // LCD arrow left blink
@@ -323,4 +527,74 @@ void LCDUpdate() // Update LCD information
     LCD.setCursor(0, 0);
     LCD.print(" ");
   }
+}
+
+void PowerSaveMode()
+{
+  if(nunchuk.zButton == 1 && ESCValue > 29)
+  {
+    unsigned long PSMcurrentMillis = millis();
+    if (PSMcurrentMillis - PSMpreviousMillis > PSMInterval) // Blink the lights every 4 seconds for 1 second (= 12 blinks/minute).
+    {
+      PSMpreviousMillis = PSMcurrentMillis;
+      PSMTimer++;
+      if(PSMTimer == 4)
+      {
+        digitalWrite(Lights, HIGH); 
+      }
+      else
+      {
+        digitalWrite(Lights, LOW);  
+      }
+
+      if(PSMTimer > 4) // Reset the timer...
+      {
+        PSMTimer = 0; 
+      }
+    }
+  }  
+  else
+  {
+    digitalWrite(Lights, HIGH); 
+  }
+}
+
+void LockFunction()
+{
+    LCD.clear();
+    LCD.setCursor(1, 0);
+    LCD.write(3);
+    LCD.setCursor(2, 0);
+    LCD.write(4);
+    LCD.setCursor(1, 1);
+    LCD.write(5);
+    LCD.setCursor(2, 1);
+    LCD.write(6);
+    
+    LCD.setCursor(13, 0);
+    LCD.write(3);
+    LCD.setCursor(14, 0);
+    LCD.write(4);
+    LCD.setCursor(13, 1);
+    LCD.write(5);
+    LCD.setCursor(14, 1);
+    LCD.write(6);
+    
+    LCD.setCursor(5, 0);
+    LCD.print("Please");
+    LCD.setCursor(5, 1);
+    LCD.print("unlock");   
+
+    nunchuk.update();
+    if(nunchuk.cButton == 1 && nunchuk.analogY <= 100 )
+    {
+      Lock = false; 
+      LCD.clear();
+      LCD.setCursor(0, 0);
+      LCD.print("    Identity    ");
+      LCD.setCursor(0, 1);
+      LCD.print("    CONFIRMED   ");
+      delay(1000);
+      LCD.clear();
+    } 
 }
