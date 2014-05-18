@@ -5,7 +5,7 @@
  *                                        *
  *-------------> SKATEDUINO <-------------*
  *                                        *
- *             V 1.0 RELEASE              *
+ *             V 1.1 RELEASE              *
  ******************************************
  THIS IS A RELEASE! I'm never resposibly for any damage to your stuff! This version is tested.
  SkateDuino is a Arduino based controller for an electric skateboard.
@@ -38,7 +38,7 @@
  
      *  Traffic indicator LEFT.
      *  Traffic indicator RIGHT.
-     *  Tail lights + headlights. 
+     *  Tail lights + headlights with SoftPWM function. 
  
    >  Simple anti-theft lock
  
@@ -49,6 +49,8 @@
 #include <Wire.h>
 #include <ArduinoNunchuk.h>
 #include <TinyGPS++.h>
+#include <SoftPWM_timer.h>
+#include <SoftPWM.h>
 
 Servo ESC;
 ArduinoNunchuk nunchuk = ArduinoNunchuk();
@@ -167,7 +169,7 @@ void setup() // BOOT PROCESS
   // Setup LCD screen.
   LCD.begin(16, 2);
   LCD.setCursor(0, 0);
-  LCD.print("SkateDuino  V1.0");
+  LCD.print("SkateDuino  V1.1");
   LCD.setCursor(0, 1);
   LCD.print(" Booting . . .  ");
   delay(350);
@@ -210,8 +212,9 @@ void setup() // BOOT PROCESS
   pinMode(TrafficIndicatorRightOutput, OUTPUT);
   digitalWrite(TrafficIndicatorLeftOutput, LOW);
   digitalWrite(TrafficIndicatorRightOutput, LOW);
-  pinMode(Lights, OUTPUT);
-  digitalWrite(Lights, HIGH);
+  SoftPWMBegin();  
+  SoftPWMSet(Lights, 0);
+  SoftPWMSetFadeTime(Lights, 1000, 1000);
   pinMode(Claxon, OUTPUT);
   digitalWrite(Claxon, LOW);
 
@@ -589,11 +592,11 @@ void PowerSaveMode()
       PSMTimer++;
       if(PSMTimer == 2)
       {
-        digitalWrite(Lights, HIGH); 
+        SoftPWMSet(Lights, 200); 
       }
       else
       {
-        digitalWrite(Lights, LOW);  
+        SoftPWMSet(Lights, 0);  
       }
 
       if(PSMTimer > 2) // Reset the timer...
@@ -604,7 +607,7 @@ void PowerSaveMode()
   }  
   else
   {
-    digitalWrite(Lights, HIGH); 
+    SoftPWMSet(Lights, 95 + MotorValue); 
   }
 }
 
