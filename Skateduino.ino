@@ -94,7 +94,7 @@ long MotorAccelerationNegativeInterval = 15;
 long MotorAccelerationPositivepreviousMillis = 0;
 long MotorAccelerationPositiveInterval = 50;
 long PSMpreviousMillis = 0;
-long PSMInterval = 1000;
+long PSMInterval = 500;
 
 byte ArrowLeftChar[8] = {
   B00000,
@@ -320,12 +320,10 @@ void loop()
 
     // Update traffic indicators.
     TrafficIndicatorsUpdate();
-
-    // Activate PSM when we aren't driving.
-    PowerSaveMode();  
-
-
   }
+  
+  // Activate PSM when we aren't driving.
+    PowerSaveMode(); 
 }
 
 void TrafficIndicatorsUpdate() // Switch the traffic indicators ON/OFF with the nunchuck accelerometer.
