@@ -5,17 +5,17 @@
  *                                        *
  *-------------> SKATEDUINO <-------------*
  *                                        *
- *               V 0.8 BETA               *
+ *             V 1.0 RELEASE              *
  ******************************************
- THIS IS A BETA! I'm never resposibly for any damage to your stuff! This version is NOT tested.
+ THIS IS A RELEASE! I'm never resposibly for any damage to your stuff! This version is tested.
  SkateDuino is a Arduino based controller for an electric skateboard.
  
+      ///////////////
+     // Features //
     ///////////////
-   // Functions //
-  ///////////////
-
+ 
    >  GPS
-   >  Maximum speed: 18km/h (Belgian laws)!
+   >  Maximum speed: 18km/h (Belgian laws)! 
    >  Acceleration assist.
    >  PSM (Power Save Mode) for saving the battery.
    >  LCD screen with some usefull information:
@@ -25,6 +25,8 @@
      * Traffic indicator
      * GPS time
      * GPS satellites
+     * GPS altitude
+     * Motor power in %
  
    >  Battery monitor for both batteries:
  
@@ -38,16 +40,15 @@
      *  Traffic indicator RIGHT.
      *  Tail lights + headlights. 
  
-   > Simple anti-theft lock
+   >  Simple anti-theft lock
  
-*/
+ */
 
 #include <LiquidCrystal.h>
 #include <Servo.h>
 #include <Wire.h>
 #include <ArduinoNunchuk.h>
 #include <TinyGPS++.h>
-
 
 Servo ESC;
 ArduinoNunchuk nunchuk = ArduinoNunchuk();
@@ -56,8 +57,8 @@ LiquidCrystal LCD(A2, A1, 15, 14, 16, 10);
 
 boolean LCDArrowLeft = true;
 boolean LCDArrowRight = true;
-boolean TrafficIndicatorLeftStatus = false;
-boolean TrafficIndicatorRightStatus = false;
+boolean TrafficIndicatorLeftStatus = true;
+boolean TrafficIndicatorRightStatus = true;
 boolean Lock = true;
 
 int ESCValue = 0;
@@ -66,10 +67,11 @@ int BatteryLevel = 0;
 int BatteryLevelStuff = 0;
 int BatteryLevelMotor = 0;
 int BatteryNumber = 0;
-int Navigation = 1;
-int MotorAccelerationPositiveValue = 0;
-int MotorAccelerationNegativeValue = 0;
+int Navigation = 3;
 int PSMTimer = 0;
+int Height = 0;
+int MotorValue = 30;
+int MotorValueDisplay = 0;
 
 const int TrafficIndicatorLeftOutput  = 5;
 const int TrafficIndicatorRightOutput  = 6;
@@ -79,7 +81,7 @@ const int Lights  =  9;
 const int Claxon  =  4;
 const int MaximumSpeed = 160; // Declare here the ESCValue when you reach 18 km/h.
 
-long TrafficIndicatorspreviousMillis = 0;
+long TrafficIndicatorspreviousMillis = 0; // Timing stuff
 long TrafficIndicatorsInterval = 300;
 long BatteryLevelpreviousMillis = 0;
 long BatteryLevelInterval = 1500;
@@ -88,9 +90,9 @@ long NavigationPositiveInterval = 500;
 long NavigationNegativepreviousMillis = 0;
 long NavigationNegativeInterval = 250;
 long MotorAccelerationNegativepreviousMillis = 0;
-long MotorAccelerationNegativeInterval = 1000;
+long MotorAccelerationNegativeInterval = 15;
 long MotorAccelerationPositivepreviousMillis = 0;
-long MotorAccelerationPositiveInterval = 2000;
+long MotorAccelerationPositiveInterval = 50;
 long PSMpreviousMillis = 0;
 long PSMInterval = 1000;
 
@@ -165,7 +167,7 @@ void setup() // BOOT PROCESS
   // Setup LCD screen.
   LCD.begin(16, 2);
   LCD.setCursor(0, 0);
-  LCD.print("SkateDuino  V0.8");
+  LCD.print("SkateDuino  V1.0");
   LCD.setCursor(0, 1);
   LCD.print(" Booting . . .  ");
   delay(350);
@@ -212,19 +214,18 @@ void setup() // BOOT PROCESS
   digitalWrite(Lights, HIGH);
   pinMode(Claxon, OUTPUT);
   digitalWrite(Claxon, LOW);
+
   LCD.createChar(1, ArrowRightChar);
   LCD.createChar(2, ArrowLeftChar);
   LCD.createChar(3, LockChar1);
   LCD.createChar(4, LockChar2);
   LCD.createChar(5, LockChar3);
   LCD.createChar(6, LockChar4);
-
   LCD.setCursor(0, 1);
   LCD.print("  Booting DONE  ");
   delay(350);
   LCD.clear();
 }
-
 
 void loop()
 {
@@ -234,36 +235,46 @@ void loop()
   }
   else
   {
-    // Update motor & nunchuck stuff
+    // Update motor & nunchuck stuff.
     nunchuk.update();
     ESCValue = map(nunchuk.analogY, 135, 255, 30, 160);
 
     if (nunchuk.zButton == 1 && ESCValue > 29)
     {
-      if(MaximumSpeed > ESCValue)
+      if(MotorValue < ESCValue) 
       {
         unsigned long MotorAccelerationPositivecurrentMillis = millis();
-        if(ESCValue >= MotorAccelerationPositiveValue && (MotorAccelerationPositivecurrentMillis - MotorAccelerationPositivepreviousMillis > MotorAccelerationPositiveInterval))
+        if(MotorAccelerationPositivecurrentMillis - MotorAccelerationPositivepreviousMillis > MotorAccelerationPositiveInterval)
         {
-          MotorAccelerationPositiveValue++;
-          ESC.write(MotorAccelerationPositiveValue);
+          MotorAccelerationPositivepreviousMillis = MotorAccelerationPositivecurrentMillis;
+          if(MotorValue < 160)
+          {
+            MotorValue++;
+          }
+          else
+          {
+            MotorValue = 160; 
+          }
+          ESC.write(MotorValue);
         }
-
-        unsigned long MotorAccelerationNegativecurrentMillis = millis();
-        if(ESCValue <= MotorAccelerationNegativeValue && (MotorAccelerationNegativecurrentMillis - MotorAccelerationNegativepreviousMillis > MotorAccelerationNegativeInterval))
-        {
-          MotorAccelerationNegativeValue--;
-          ESC.write(MotorAccelerationNegativeValue);
-        }
-      }
-      else
-      {
-        ESC.write(MaximumSpeed); 
       }
     }
     else
     {
-      ESC.write(30);
+      unsigned long MotorAccelerationNegativecurrentMillis = millis();
+      if(MotorAccelerationNegativecurrentMillis - MotorAccelerationNegativepreviousMillis > MotorAccelerationNegativeInterval)
+      {
+        MotorAccelerationNegativepreviousMillis = MotorAccelerationNegativecurrentMillis;
+        if(MotorValue > 30)
+        {
+          MotorValue--;
+        }
+        else
+        {
+          MotorValue = 30;
+        }
+        ESC.write(MotorValue);
+      }
     }
 
     if(nunchuk.cButton == 1)
@@ -274,7 +285,7 @@ void loop()
     {
       digitalWrite(Claxon,LOW); 
     }
-    
+
     if(nunchuk.cButton == 1 && nunchuk.analogY >= 200 )
     {
       Lock = true;
@@ -288,7 +299,7 @@ void loop()
         Navigation--;
       }
     }
-    if(nunchuk.analogX >= 150 && nunchuk.zButton == 0 && Navigation < 3)
+    if(nunchuk.analogX >= 150 && nunchuk.zButton == 0 && Navigation < 5)
     {
       unsigned long NavigationPositivecurrentMillis = millis();
       if (NavigationPositivecurrentMillis - NavigationPositivepreviousMillis > NavigationPositiveInterval) {
@@ -301,22 +312,23 @@ void loop()
     while (Serial1.available() > 0)
       if (GPS.encode(Serial1.read()))
 
-        // Update battery level
+        // Update battery level.
         BatteryLevelUpdate();
 
-    // Update LCD
+    // Update LCD.
     LCDUpdate();
 
-    // Update traffic indicators
+    // Update traffic indicators.
     TrafficIndicatorsUpdate();
 
     // Activate PSM when we aren't driving.
     PowerSaveMode();  
 
+
   }
 }
 
-void TrafficIndicatorsUpdate() // Switch the traffic indicators ON/OFF with the nunchuck accelerometer
+void TrafficIndicatorsUpdate() // Switch the traffic indicators ON/OFF with the nunchuck accelerometer.
 {
   unsigned long TrafficIndicatorscurrentMillis = millis();
   if (nunchuk.accelX > 500)
@@ -427,7 +439,7 @@ void LCDUpdate() // Update LCD information
 {
   switch(Navigation)
   {
-  case 1:
+  case 3:
     if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the current speed based on GPS information.
     {
       SpeedKMPH = GPS.speed.kmph();
@@ -452,7 +464,7 @@ void LCDUpdate() // Update LCD information
     break;
 
   case 2:
-    if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the number of satellites.
+    if (GPS.satellites.isValid() && GPS.satellites.age() < 1500) // Show the number of satellites.
     {
       LCD.setCursor(0, 1);
       LCD.print("#Satellites:    ");
@@ -468,7 +480,7 @@ void LCDUpdate() // Update LCD information
     }
     break;
 
-  case 3:
+  case 1:
     if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the current time based on GPS information.
     {
       LCD.setCursor(0, 1);
@@ -497,8 +509,47 @@ void LCDUpdate() // Update LCD information
     }
     break;
 
-  default:
-    Navigation = 1;
+  case 4:
+    if (GPS.altitude.isValid() && GPS.altitude.age() < 1500) // Show the current time based on GPS information.
+    {
+      Height = GPS.altitude.meters();
+      LCD.setCursor(0, 1);
+      LCD.print("                ");
+      LCD.setCursor(0, 1);
+      LCD.print("Height:         ");  
+      LCD.setCursor(9, 1);
+      LCD.print("   ");
+      LCD.setCursor(12, 1);
+      LCD.print("m");
+      LCD.print(Height);
+    }
+    else
+    {
+      LCD.setCursor(0, 1);
+      LCD.print("Height:         "); 
+      LCD.setCursor(9, 1);
+      LCD.print("N/A");
+      LCD.setCursor(14, 1);
+      LCD.print("m");
+    }
+    break;
+
+  case 5:
+    LCD.setCursor(0, 1);
+    LCD.print("Motor power:    "); 
+    LCD.setCursor(15, 1);
+    LCD.print("%");
+    MotorValueDisplay = map(MotorValue, 30, 160, 0, 100);
+    if(MotorValueDisplay == 100)
+    {
+      LCD.setCursor(12, 1);
+      LCD.print(MotorValueDisplay);
+    }
+    else
+    {
+      LCD.setCursor(13, 1);
+      LCD.print(MotorValueDisplay);
+    }
     break;
   }
 
@@ -561,40 +612,40 @@ void PowerSaveMode()
 
 void LockFunction()
 {
-    LCD.clear();
-    LCD.setCursor(1, 0);
-    LCD.write(3);
-    LCD.setCursor(2, 0);
-    LCD.write(4);
-    LCD.setCursor(1, 1);
-    LCD.write(5);
-    LCD.setCursor(2, 1);
-    LCD.write(6);
-    
-    LCD.setCursor(13, 0);
-    LCD.write(3);
-    LCD.setCursor(14, 0);
-    LCD.write(4);
-    LCD.setCursor(13, 1);
-    LCD.write(5);
-    LCD.setCursor(14, 1);
-    LCD.write(6);
-    
-    LCD.setCursor(5, 0);
-    LCD.print("Please");
-    LCD.setCursor(5, 1);
-    LCD.print("unlock");   
+  LCD.clear();
+  LCD.setCursor(1, 0);
+  LCD.write(3);
+  LCD.setCursor(2, 0);
+  LCD.write(4);
+  LCD.setCursor(1, 1);
+  LCD.write(5);
+  LCD.setCursor(2, 1);
+  LCD.write(6);
 
-    nunchuk.update();
-    if(nunchuk.cButton == 1 && nunchuk.analogY <= 100 )
-    {
-      Lock = false; 
-      LCD.clear();
-      LCD.setCursor(0, 0);
-      LCD.print("    Identity    ");
-      LCD.setCursor(0, 1);
-      LCD.print("    CONFIRMED   ");
-      delay(1000);
-      LCD.clear();
-    } 
+  LCD.setCursor(13, 0);
+  LCD.write(3);
+  LCD.setCursor(14, 0);
+  LCD.write(4);
+  LCD.setCursor(13, 1);
+  LCD.write(5);
+  LCD.setCursor(14, 1);
+  LCD.write(6);
+
+  LCD.setCursor(5, 0);
+  LCD.print("Please");
+  LCD.setCursor(5, 1);
+  LCD.print("unlock");   
+
+  nunchuk.update();
+  if(nunchuk.cButton == 1 && nunchuk.analogY <= 15 )
+  {
+    Lock = false; 
+    LCD.clear();
+    LCD.setCursor(0, 0);
+    LCD.print("    Identity    ");
+    LCD.setCursor(0, 1);
+    LCD.print("    CONFIRMED   ");
+    delay(1000);
+    LCD.clear();
+  } 
 }
