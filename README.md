@@ -8,15 +8,16 @@ Skateduino is an Arduino based control system for electric skateboards with a Wi
 * GPS speed
 * GPS time
 * GPS #satellites
+* GPS altitude
 * Dual battery monitor
 * Traffic indicators & lights
 * ESC motor control
 * LCD screen
 * The controls are based on the Wii Nunchuck
-* Speed limit 18 km/h, only then the electric skateboard can be used in Belgium on the bicycle path. 
+* Speed limit 18 km/h, only then the electric skateboard can be used in Belgium on the bicycle path. You have to change the MaximumSpeed variable in the source code depending on your ESC and configuration.
 * Claxon
 * Simple anti-theft lock
-* Acceleration assist
+* Acceleration & Brake assist
 * Power Save Mode
 
 2. Versions
