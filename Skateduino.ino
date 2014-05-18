@@ -10,9 +10,9 @@
  THIS IS A RELEASE! I'm never resposibly for any damage to your stuff! This version is tested.
  SkateDuino is a Arduino based controller for an electric skateboard.
  
-      ///////////////
+      //////////////
      // Features //
-    ///////////////
+    //////////////
  
    >  GPS
    >  Maximum speed: 18km/h (Belgian laws)! 
