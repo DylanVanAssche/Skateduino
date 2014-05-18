@@ -598,7 +598,7 @@ void PowerSaveMode()
         digitalWrite(Lights, LOW);  
       }
 
-      if(PSMTimer > 4) // Reset the timer...
+      if(PSMTimer > 2) // Reset the timer...
       {
         PSMTimer = 0; 
       }
