@@ -589,7 +589,7 @@ void PowerSaveMode()
     {
       PSMpreviousMillis = PSMcurrentMillis;
       PSMTimer++;
-      if(PSMTimer == 4)
+      if(PSMTimer == 2)
       {
         digitalWrite(Lights, HIGH); 
       }
