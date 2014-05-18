@@ -582,7 +582,7 @@ void LCDUpdate() // Update LCD information
 
 void PowerSaveMode()
 {
-  if(nunchuk.zButton == 1 && ESCValue > 29)
+  if(nunchuk.zButton == 0 && MotorValue <= 31)
   {
     unsigned long PSMcurrentMillis = millis();
     if (PSMcurrentMillis - PSMpreviousMillis > PSMInterval) // Blink the lights every 4 seconds for 1 second (= 12 blinks/minute).
@@ -645,7 +645,7 @@ void LockFunction()
     LCD.print("    Identity    ");
     LCD.setCursor(0, 1);
     LCD.print("    CONFIRMED   ");
-    delay(1000);
+    delay(750);
     LCD.clear();
   } 
 }
