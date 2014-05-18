@@ -10,7 +10,7 @@ Skateduino is an Arduino based control system for electric skateboards with a Wi
 * GPS #satellites
 * GPS altitude
 * Dual battery monitor
-* Traffic indicators & lights
+* Traffic indicators & lights with SoftPWM function
 * ESC motor control
 * LCD screen
 * The controls are based on the Wii Nunchuck
