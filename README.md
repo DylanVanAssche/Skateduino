@@ -24,6 +24,7 @@ Skateduino is an Arduino based control system for electric skateboards with a Wi
 -----------
 * V0.5 the first public BETA release
 * V0.8 the second public BETA release
+* V1.0 RELEASE
 
 3. Hardware
 -----------
@@ -33,3 +34,4 @@ Skateduino is an Arduino based control system for electric skateboards with a Wi
 * ESC + motor
 * LED's
 * 2 batteries
+* GPS module
