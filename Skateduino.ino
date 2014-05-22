@@ -5,14 +5,14 @@
  *                                        *
  *-------------> SKATEDUINO <-------------*
  *                                        *
- *             V 1.1 RELEASE              *
+ *             V 1.2 RELEASE              *
  ******************************************
  THIS IS A RELEASE! I'm never resposibly for any damage to your stuff! This version is tested.
  SkateDuino is a Arduino based controller for an electric skateboard.
  
-      //////////////
-     // Features //
-    //////////////
+ //////////////
+ // Features //
+ //////////////
  
    >  GPS
    >  Maximum speed: 18km/h (Belgian laws)! 
@@ -40,7 +40,9 @@
      *  Traffic indicator RIGHT.
      *  Tail lights + headlights with SoftPWM function. 
  
-   >  Simple anti-theft lock
+   >  Simple anti-theft lock.
+   >  Travelled distance.
+   >  BoostItNow! mode, override the maximumspeed with 15%. Ideal for climing hills!
  
  */
 
@@ -51,17 +53,21 @@
 #include <TinyGPS++.h>
 #include <SoftPWM_timer.h>
 #include <SoftPWM.h>
+#include <EEPROM.h>
+#include <MedianFilter.h>
 
 Servo ESC;
 ArduinoNunchuk nunchuk = ArduinoNunchuk();
 TinyGPSPlus GPS;
 LiquidCrystal LCD(A2, A1, 15, 14, 16, 10);
+MedianFilter Filter;
 
 boolean LCDArrowLeft = true;
 boolean LCDArrowRight = true;
 boolean TrafficIndicatorLeftStatus = true;
 boolean TrafficIndicatorRightStatus = true;
 boolean Lock = true;
+boolean BoostItNow = false;
 
 int ESCValue = 0;
 int SpeedKMPH = 0;
@@ -69,11 +75,14 @@ int BatteryLevel = 0;
 int BatteryLevelStuff = 0;
 int BatteryLevelMotor = 0;
 int BatteryNumber = 0;
-int Navigation = 3;
+int Navigation = 4;
 int PSMTimer = 0;
 int Height = 0;
 int MotorValue = 30;
 int MotorValueDisplay = 0;
+int TotalDistance = 0;
+int DistanceCalculated = 0;
+int TotalDistanceTimer = 0;
 
 const int TrafficIndicatorLeftOutput  = 5;
 const int TrafficIndicatorRightOutput  = 6;
@@ -81,7 +90,7 @@ const int BatteryStuff = A0;
 const int BatteryMotor = A3;
 const int Lights  =  9;
 const int Claxon  =  4;
-const int MaximumSpeed = 160; // Declare here the ESCValue when you reach 18 km/h.
+const int MaximumSpeed = 100; // Declare here the ESCValue when you reach 18 km/h.
 
 long TrafficIndicatorspreviousMillis = 0; // Timing stuff
 long TrafficIndicatorsInterval = 300;
@@ -97,6 +106,12 @@ long MotorAccelerationPositivepreviousMillis = 0;
 long MotorAccelerationPositiveInterval = 50;
 long PSMpreviousMillis = 0;
 long PSMInterval = 500;
+long DistanceCalculatorpreviousMillis = 0;
+long DistanceCalculatorInterval = 1000;
+long BoostItNowpreviousMillis = 0;
+long BoostItNowInterval = 250;
+long DistanceDisplaypreviousMillis = 0;
+long DistanceDisplayInterval = 250;
 
 byte ArrowLeftChar[8] = {
   B00000,
@@ -169,7 +184,7 @@ void setup() // BOOT PROCESS
   // Setup LCD screen.
   LCD.begin(16, 2);
   LCD.setCursor(0, 0);
-  LCD.print("SkateDuino  V1.1");
+  LCD.print("SkateDuino  V1.2");
   LCD.setCursor(0, 1);
   LCD.print(" Booting . . .  ");
   delay(350);
@@ -217,6 +232,7 @@ void setup() // BOOT PROCESS
   SoftPWMSetFadeTime(Lights, 1000, 1000);
   pinMode(Claxon, OUTPUT);
   digitalWrite(Claxon, LOW);
+  TotalDistance = EEPROM.read(1);
 
   LCD.createChar(1, ArrowRightChar);
   LCD.createChar(2, ArrowLeftChar);
@@ -250,13 +266,13 @@ void loop()
         if(MotorAccelerationPositivecurrentMillis - MotorAccelerationPositivepreviousMillis > MotorAccelerationPositiveInterval)
         {
           MotorAccelerationPositivepreviousMillis = MotorAccelerationPositivecurrentMillis;
-          if(MotorValue < 160)
+          if(MotorValue <= (MaximumSpeed + BoostItNow))
           {
             MotorValue++;
           }
           else
           {
-            MotorValue = 160; 
+            MotorValue = MaximumSpeed + BoostItNow; 
           }
           ESC.write(MotorValue);
         }
@@ -280,13 +296,13 @@ void loop()
       }
     }
 
-    if(nunchuk.cButton == 1)
+    if(nunchuk.cButton == 1 && nunchuk.zButton == 1)
     {
-      digitalWrite(Claxon,HIGH); 
+      digitalWrite(Claxon,HIGH);  
     }
     else
     {
-      digitalWrite(Claxon,LOW); 
+      digitalWrite(Claxon,LOW);  
     }
 
     if(nunchuk.cButton == 1 && nunchuk.analogY >= 200 )
@@ -302,7 +318,7 @@ void loop()
         Navigation--;
       }
     }
-    if(nunchuk.analogX >= 150 && nunchuk.zButton == 0 && Navigation < 5)
+    if(nunchuk.analogX >= 150 && nunchuk.zButton == 0 && Navigation < 7)
     {
       unsigned long NavigationPositivecurrentMillis = millis();
       if (NavigationPositivecurrentMillis - NavigationPositivepreviousMillis > NavigationPositiveInterval) {
@@ -311,22 +327,26 @@ void loop()
       }
     }
 
-    // Update GPS stuff
+    // Update GPS stuff.
     while (Serial1.available() > 0)
       if (GPS.encode(Serial1.read()))
 
-        // Update battery level.
-        BatteryLevelUpdate();
+    // Update battery level.
+    BatteryLevelUpdate();
 
     // Update LCD.
     LCDUpdate();
 
     // Update traffic indicators.
     TrafficIndicatorsUpdate();
+
+    // Travelled distance calculator.
+    TravelledDistanceFunction();
+
   }
-  
+
   // Activate PSM when we aren't driving.
-    PowerSaveMode(); 
+  PowerSaveMode();  
 }
 
 void TrafficIndicatorsUpdate() // Switch the traffic indicators ON/OFF with the nunchuck accelerometer.
@@ -440,118 +460,199 @@ void LCDUpdate() // Update LCD information
 {
   switch(Navigation)
   {
-  case 3:
-    if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the current speed based on GPS information.
-    {
-      SpeedKMPH = GPS.speed.kmph();
-      LCD.setCursor(0, 1);
-      LCD.print("Speed: ");
-      LCD.setCursor(11, 1);
-      LCD.print(" km/h");
-      LCD.setCursor(6, 1);
-      LCD.print("     ");
-      LCD.setCursor(9, 1);
-      LCD.print(SpeedKMPH);
-    }
-    else
-    {
-      LCD.setCursor(0, 1);
-      LCD.print("Speed: ");
-      LCD.setCursor(11, 1);
-      LCD.print(" km/h");
-      LCD.setCursor(7, 1);
-      LCD.print("N/A ");
-    }
-    break;
-
-  case 2:
-    if (GPS.satellites.isValid() && GPS.satellites.age() < 1500) // Show the number of satellites.
-    {
-      LCD.setCursor(0, 1);
-      LCD.print("#Satellites:    ");
-      LCD.setCursor(13, 1);
-      LCD.print(GPS.satellites.value());
-    }
-    else
-    {
-      LCD.setCursor(0, 1);
-      LCD.print("#Satellites:    ");
-      LCD.setCursor(13, 1);
-      LCD.print("N/A ");
-    }
-    break;
 
   case 1:
-    if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the current time based on GPS information.
     {
-      LCD.setCursor(0, 1);
-      LCD.print("                ");
-      LCD.setCursor(0, 1);
-      LCD.print("Time:           ");
-      LCD.setCursor(7, 1);
-      LCD.print("h");
-      LCD.setCursor(11, 1);
-      LCD.print("m");
-      LCD.setCursor(15, 1);
-      LCD.print("s");
-      LCD.setCursor(5, 1);
-      LCD.print(GPS.time.hour() + 2);
-      LCD.setCursor(9, 1);
-      LCD.print(GPS.time.minute());
-      LCD.setCursor(13, 1);
-      LCD.print(GPS.time.second());
+      if (GPS.altitude.isValid() && GPS.altitude.age() < 1500) // Show the current time based on GPS information.
+      {
+        Height = GPS.altitude.meters();
+        LCD.setCursor(0, 1);
+        LCD.print("                ");
+        LCD.setCursor(0, 1);
+        LCD.print("Height:         ");  
+        LCD.setCursor(9, 1);
+        LCD.print("   ");
+        LCD.print(Height);
+        LCD.setCursor(12, 1);
+        LCD.print("m");
+      }
+      else
+      {
+        LCD.setCursor(0, 1);
+        LCD.print("Height:         "); 
+        LCD.setCursor(9, 1);
+        LCD.print("N/A");
+        LCD.setCursor(14, 1);
+        LCD.print("m");
+      }
+      break;
     }
-    else
+
+  case 2:
     {
-      LCD.setCursor(0, 1);
-      LCD.print("Time:           ");
-      LCD.setCursor(9, 1);
-      LCD.print("N/A");
+      if (GPS.satellites.isValid() && GPS.satellites.age() < 1500) // Show the number of satellites.
+      {
+        LCD.setCursor(0, 1);
+        LCD.print("#Satellites:    ");
+        LCD.setCursor(13, 1);
+        LCD.print(GPS.satellites.value());
+      }
+      else
+      {
+        LCD.setCursor(0, 1);
+        LCD.print("#Satellites:    ");
+        LCD.setCursor(13, 1);
+        LCD.print("N/A ");
+      }
+      break;
     }
-    break;
+
+  case 3:
+    {
+      if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the current time based on GPS information.
+      {
+        LCD.setCursor(0, 1);
+        LCD.print("Time:           ");
+        LCD.setCursor(7, 1);
+        LCD.print("h");
+        LCD.setCursor(11, 1);
+        LCD.print("m");
+        LCD.setCursor(15, 1);
+        LCD.print("s");
+        LCD.setCursor(5, 1);
+        LCD.print(GPS.time.hour() + 2);
+        LCD.setCursor(9, 1);
+        LCD.print(GPS.time.minute());
+        LCD.setCursor(13, 1);
+        LCD.print(GPS.time.second());
+      }
+      else
+      {
+        LCD.setCursor(0, 1);
+        LCD.print("Time:           ");
+        LCD.setCursor(9, 1);
+        LCD.print("N/A");
+      }
+      break;
+    }
 
   case 4:
-    if (GPS.altitude.isValid() && GPS.altitude.age() < 1500) // Show the current time based on GPS information.
     {
-      Height = GPS.altitude.meters();
-      LCD.setCursor(0, 1);
-      LCD.print("                ");
-      LCD.setCursor(0, 1);
-      LCD.print("Height:         ");  
-      LCD.setCursor(9, 1);
-      LCD.print("   ");
-      LCD.setCursor(12, 1);
-      LCD.print("m");
-      LCD.print(Height);
+      if (GPS.speed.isValid() && GPS.speed.age() < 1500) // Show the current speed based on GPS information.
+      {
+        SpeedKMPH = GPS.speed.kmph();
+        LCD.setCursor(0, 1);
+        LCD.print("Speed: ");
+        LCD.setCursor(11, 1);
+        LCD.print(" km/h");
+        LCD.setCursor(6, 1);
+        LCD.print("     ");
+        LCD.setCursor(9, 1);
+        LCD.print(SpeedKMPH);
+      }
+      else
+      {
+        LCD.setCursor(0, 1);
+        LCD.print("Speed: ");
+        LCD.setCursor(11, 1);
+        LCD.print(" km/h");
+        LCD.setCursor(7, 1);
+        LCD.print("N/A ");
+      }
+      break;
     }
-    else
-    {
-      LCD.setCursor(0, 1);
-      LCD.print("Height:         "); 
-      LCD.setCursor(9, 1);
-      LCD.print("N/A");
-      LCD.setCursor(14, 1);
-      LCD.print("m");
-    }
-    break;
 
   case 5:
-    LCD.setCursor(0, 1);
-    LCD.print("Motor power:    "); 
-    LCD.setCursor(15, 1);
-    LCD.print("%");
-    MotorValueDisplay = map(MotorValue, 30, 160, 0, 100);
-    if(MotorValueDisplay == 100)
     {
-      LCD.setCursor(12, 1);
-      LCD.print(MotorValueDisplay);
+      LCD.setCursor(0, 1);
+      LCD.print("Motor power:    "); 
+      LCD.setCursor(15, 1);
+      LCD.print("%");
+      if(BoostItNow == 0)
+      {
+      MotorValueDisplay = map(MotorValue, 30, MaximumSpeed, 0, 100);
+      }
+      else
+      {
+      MotorValueDisplay = map(MotorValue, 30, MaximumSpeed + 20, 0, 115);  
+      }
+      if(MotorValueDisplay >= 100)
+      {
+        LCD.setCursor(12, 1);
+        LCD.print(MotorValueDisplay);
+      }
+      else
+      {
+        LCD.setCursor(13, 1);
+        LCD.print(MotorValueDisplay);
+      }
+      break;
     }
-    else
+
+  case 6:
     {
-      LCD.setCursor(13, 1);
-      LCD.print(MotorValueDisplay);
+      if(GPS.speed.isValid() && GPS.speed.age() < 1500)
+      {
+        LCD.setCursor(0, 1);
+        LCD.print("Distance:       ");
+        LCD.setCursor(14, 1);
+        LCD.print("km");
+        LCD.setCursor(10, 1);
+        LCD.print(TotalDistance);
+      }
+      else
+      {
+        LCD.setCursor(0, 1);
+        LCD.print("Distance:       ");
+        LCD.setCursor(14, 1);
+        LCD.print("km");
+        LCD.setCursor(10, 1);
+        LCD.print(TotalDistance);
+      }
+
+      unsigned long DistanceDisplaycurrentMillis = millis();
+      if(nunchuk.zButton == 0 && nunchuk.cButton == 1 && (DistanceDisplaycurrentMillis - DistanceDisplaypreviousMillis > DistanceDisplayInterval))
+      {
+        DistanceDisplaypreviousMillis = DistanceDisplaycurrentMillis;
+        TotalDistance = 0;
+        LCD.setCursor(0, 1);
+        LCD.print("Distance CLEARED");
+        delay(300);
+        EEPROM.write(1,TotalDistance);
+      }    
+      break;
     }
-    break;
+
+  case 7:  
+    {  
+      LCD.setCursor(0, 1);
+      LCD.print("BoostItNow:       ");
+      if(BoostItNow == 20)
+      {
+        LCD.setCursor(12, 1);
+        LCD.print("ON");
+      }
+      else
+      {
+        LCD.setCursor(12, 1);
+        LCD.print("OFF");
+      }
+
+      unsigned long BoostItNowcurrentMillis = millis();
+      if(nunchuk.zButton == 0 && nunchuk.cButton == 1 && (BoostItNowcurrentMillis - BoostItNowpreviousMillis > BoostItNowInterval))
+      {
+        BoostItNowpreviousMillis = BoostItNowcurrentMillis;
+        if(BoostItNow == 20)
+        {
+          BoostItNow = 0; 
+        }
+        else
+        {
+          BoostItNow = 20;
+        }
+      }  
+      break; 
+    }
   }
 
   if (LCDArrowLeft == true)  // LCD arrow left blink
@@ -650,3 +751,25 @@ void LockFunction()
     LCD.clear();
   } 
 }
+
+void TravelledDistanceFunction()
+{
+  if(GPS.speed.isValid() && GPS.speed.age() < 1500)
+  {
+    SpeedKMPH = GPS.speed.kmph();
+    unsigned long DistanceCalculatorcurrentMillis = millis();
+    if (DistanceCalculatorcurrentMillis - DistanceCalculatorpreviousMillis > DistanceCalculatorInterval) // Blink the lights every 4 seconds for 1 second (= 12 blinks/minute).
+    {
+      DistanceCalculatorpreviousMillis = DistanceCalculatorcurrentMillis;
+      DistanceCalculated = SpeedKMPH * (1/3600);
+      TotalDistance = DistanceCalculated + TotalDistance;
+
+      if(TotalDistanceTimer >= 60)
+      {
+        EEPROM.write(1,TotalDistance);
+        TotalDistanceTimer = 0;
+      }
+    }
+  }
+}
+
