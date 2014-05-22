@@ -19,12 +19,25 @@ Skateduino is an Arduino based control system for electric skateboards with a Wi
 * Simple anti-theft lock
 * Acceleration & Brake assist
 * Power Save Mode
+* Travelled distance
+* BoostItNow! mode, override the maximumspeed with 15%. Ideal for climing hills!
 
 2. Versions
 -----------
 * V0.5 the first public BETA release
+  The first usable code... 
+
 * V0.8 the second public BETA release
+  A lot of bugfixes were done.
+
 * V1.0 RELEASE
+  Finished :)
+
+* V1.1 RELEASE
+  New features + minor bugfixes
+
+* V1.2 RELEASE
+  New features + minor bugfixes
 
 3. Hardware
 -----------
